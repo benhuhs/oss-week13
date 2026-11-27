@@ -2,6 +2,11 @@
 // The provider, the model and the key come from .env:
 //   process.env.LLM_BASE_URL, process.env.LLM_MODEL, process.env.LLM_API_KEY
 
+const SYSTEM_JSON = `You analyze a product review and answer ONLY with a JSON object. No other text.
+The object has exactly these three keys:
+- "sentiment": one of "positive", "negative", "neutral"
+- "score": an integer from 1 to 5 (1 = very bad, 5 = very good), a number, not a string
+- "summary": one short sentence summarizing the review, in the same language as the review`;
 // TODO P4: make a constant SYSTEM here: the rules for every answer (tone, length, format).
 //          Then send it as the first message, before the user's message, in ask().
 const SYSTEM = `항상 존댓말(해요체)로 답하세요.
@@ -52,6 +57,32 @@ export async function chat(history) {
 // analyze("a review")  ->  an object, not a sentence:
 //   { sentiment: "positive" | "negative" | "neutral", score: 1..5, summary: "one short sentence" }
 export async function analyze(text) {
-  // TODO P6: write this function (see problems/P6_json.md). Delete the throw line below.
-  throw new Error("analyze() is not written yet");
+  const res = await fetch(`${process.env.LLM_BASE_URL}/chat/completions`, {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${process.env.LLM_API_KEY}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      model: process.env.LLM_MODEL,
+      messages: [
+        { role: "system", content: SYSTEM_JSON },         
+        { role: "user", content: text },
+      ],
+      response_format: { type: "json_object" },          
+    }),
+  });
+  if (!res.ok) throw new Error(`LLM: HTTP ${res.status}`);
+  const data = await res.json();
+
+  const { sentiment, score, summary } = JSON.parse(data.choices[0].message.content);
+
+  if (
+    !["positive", "negative", "neutral"].includes(sentiment) ||
+    !(Number.isInteger(score) && score >= 1 && score <= 5) ||
+    typeof summary !== "string"
+  ) {
+    throw new Error("LLM: the answer has the wrong shape");
+  }
+  return { sentiment, score, summary };
 }
